@@ -48,12 +48,12 @@ class DDPG(object):
         self.S_ = tf.placeholder(tf.float32, [None, s_dim], 's_')
         self.R = tf.placeholder(tf.float32, [None, 1], 'r')
 
-        #声明两个actor网络
+        #声明两个actor网络,输入s,输出a
         with tf.variable_scope('Actor'):
             self.a = self._build_a(self.S, scope='eval', trainable=True)
             a_ = self._build_a(self.S_, scope='target', trainable=False)
 
-        #声明两个critic网络
+        #声明两个critic网络,输入是s,a输出是Q(s,a),注意target网络的a是从actor的target网络来的,eval网络的a是从actor的eval网络来的
         with tf.variable_scope('Critic'):
             # assign self.a = a in memory when calculating q for td_error,
             # otherwise the self.a is from Actor when updating Actor
@@ -66,7 +66,7 @@ class DDPG(object):
         self.ce_params = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='Critic/eval')
         self.ct_params = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='Critic/target')
 
-        #定义critic网络更新用的Q_target,这里就是最最普通的DQN更新方式(由于输入是s,a,所以都没有maxQ这个)就是|r+gamma*Q(s_,a_)-Q(s,a)|,
+        #定义critic网络更新用的Q_target,这里就是最最普通的SARSA式的更新方式(由于输入是s,a,输出是单个Q值,所以都没有maxQ这个)就是|r+gamma*Q(s_,a_)-Q(s,a)|,
         q_target = self.R + GAMMA * q_
         #定义critic网络更新用的td-error
         td_error = tf.losses.mean_squared_error(labels=q_target, predictions=q)
@@ -74,7 +74,7 @@ class DDPG(object):
         self.ctrain = tf.train.AdamOptimizer(LR_C).minimize(td_error, var_list=self.ce_params)
 
         #定义actor网络的loss,最大化Q(s,a),解释https://morvanzhou.github.io/tutorials/machine-learning/reinforcement-learning/6-2-DDPG/
-        a_loss = - tf.reduce_mean(q)    # maximize the q
+        a_loss = - tf.reduce_mean(q)    #最大化q(s,a),由于q中的a是从actor的eval网络来的,所以下面指定var_list为actor eval网络的参数,就会只更新它
         self.atrain = tf.train.AdamOptimizer(LR_A).minimize(a_loss, var_list=self.ae_params)
 
         self.sess.run(tf.global_variables_initializer())
