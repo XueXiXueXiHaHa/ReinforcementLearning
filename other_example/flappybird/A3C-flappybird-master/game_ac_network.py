@@ -15,6 +15,11 @@ class GameACNetwork(object):
     self._device = device
 
   def prepare_loss(self, entropy_beta):
+    '''
+    计算并返回total_loss = policy_loss + value_loss
+    :param entropy_beta:
+    :return:
+    '''
     with tf.device(self._device):
       # taken action (input for policy)
       self.a = tf.placeholder("float", [None, self._action_size])
@@ -54,6 +59,12 @@ class GameACNetwork(object):
     raise NotImplementedError()
 
   def sync_from(self, src_netowrk, name=None):
+    '''
+    将src_netowrk网络中的参数赋值给此GameACNetwork
+    :param src_netowrk:
+    :param name:
+    :return:
+    '''
     src_vars = src_netowrk.get_vars()
     dst_vars = self.get_vars()
 
@@ -98,6 +109,7 @@ class GameACFFNetwork(GameACNetwork):
                action_size,
                thread_index,
                device="/cpu:0"):
+    #继承GameACNetwork类
     GameACNetwork.__init__(self, action_size, thread_index, device)
     
     scope_name = "net_" + str(self._thread_index)
@@ -105,7 +117,7 @@ class GameACFFNetwork(GameACNetwork):
       self.W_conv1, self.b_conv1 = self._conv_variable([8, 8, 4, 16])  # stride=4
       self.W_conv2, self.b_conv2 = self._conv_variable([4, 4, 16, 32]) # stride=2
 
-      self.W_fc1, self.b_fc1 = self._fc_variable([2592, 256])
+      self.W_fc1, self.b_fc1 = self._fc_variable([2048, 256])
 
       # weight for policy output layer
       self.W_fc2, self.b_fc2 = self._fc_variable([256, action_size])
@@ -119,7 +131,7 @@ class GameACFFNetwork(GameACNetwork):
       h_conv1 = tf.nn.relu(self._conv2d(self.s,  self.W_conv1, 4) + self.b_conv1)
       h_conv2 = tf.nn.relu(self._conv2d(h_conv1, self.W_conv2, 2) + self.b_conv2)
 
-      h_conv2_flat = tf.reshape(h_conv2, [-1, 2592])
+      h_conv2_flat = tf.reshape(h_conv2, [-1, 2048])
       h_fc1 = tf.nn.relu(tf.matmul(h_conv2_flat, self.W_fc1) + self.b_fc1)
 
       # policy (output)

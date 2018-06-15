@@ -27,41 +27,46 @@ class A3CTrainingThread(object):
                random_seed):
 
     self.thread_index = thread_index
-    self.learning_rate_input = learning_rate_input
-    self.max_global_time_step = max_global_time_step
+    self.learning_rate_input = learning_rate_input   #每个worker不同
+    self.max_global_time_step = max_global_time_step  #4000w steps
 
-    self.action_size = action_size
-    self.gamma = gamma
-    self.local_t_max = local_t_max
-    self.agent_type = agent_type
+    self.action_size = action_size #2
+    self.gamma = gamma # 0.99
+    self.local_t_max = local_t_max # 256
+    self.agent_type = agent_type #FF
     self.performance_log_interval = performance_log_interval
     self.log_level = log_level
 
+    #初始化worker的网络
     if self.agent_type == 'LSTM':
       self.local_network = GameACLSTMNetwork(self.action_size, thread_index, device)
     else:
       self.local_network = GameACFFNetwork(self.action_size, thread_index, device)
-
+    #创建一下loss的相关变量
     self.local_network.prepare_loss(entropy_beta)
 
     with tf.device(device):
+      #获取worker网络的参数
+      #[self.W_conv1, self.b_conv1, self.W_conv2, self.b_conv2,self.W_fc1, self.b_fc1,self.W_fc2, self.b_fc2,self.W_fc3, self.b_fc3]
       var_refs = []
       variables = self.local_network.get_vars()
       for v in variables:
         var_refs.append(v)
-      
+      #计算梯度,
       self.gradients = tf.gradients(
         self.local_network.total_loss, var_refs,
         gate_gradients=False,
         aggregation_method=None,
         colocate_gradients_with_ops=False)
-
+    #更新网络
     self.apply_gradients = grad_applier.apply_gradients(
       global_network.get_vars(),
       self.gradients )
-      
+
+    #拉取global网络参数
     self.sync = self.local_network.sync_from(global_network)
-    
+
+    #初始化游戏环境
     np.random.seed(random_seed)
     self.game_state = GameState(random_seed * thread_index, self.action_size)
     
@@ -70,7 +75,7 @@ class A3CTrainingThread(object):
     self.initial_learning_rate = initial_learning_rate
     self.learn_rate = self.initial_learning_rate
 
-
+    #重置一些计数器
     self.reset_counters()
 
     self.episode = 0
@@ -93,6 +98,7 @@ class A3CTrainingThread(object):
     return learning_rate
 
   def choose_action(self, pi_values):
+    #根据概率选取action
     return np.random.choice(range(len(pi_values)), p=pi_values)
 
   def set_start_time(self, start_time):
@@ -106,7 +112,7 @@ class A3CTrainingThread(object):
 
     terminal_end = False
 
-    # copy weights from shared to local
+    # copy weights from shared to local ,这里先把global的参数同步过来一下
     sess.run(self.sync)
 
     start_local_t = self.local_t
@@ -114,10 +120,10 @@ class A3CTrainingThread(object):
     if self.agent_type == 'LSTM':
       start_lstm_state = self.local_network.lstm_state_out
     
-    # t_max times loop
+    # t_max times =256 loop
     for i in range(self.local_t_max):
-      pi_, value_ = self.local_network.run_policy_and_value(sess, self.game_state.s_t)
-      action = self.choose_action(pi_)
+      pi_, value_ = self.local_network.run_policy_and_value(sess, self.game_state.s_t) #输入s,获取action的概率
+      action = self.choose_action(pi_) #根据概率选择action : 0 还是 1
 
       states.append(self.game_state.s_t)
       actions.append(action)
@@ -125,7 +131,7 @@ class A3CTrainingThread(object):
 
       # process game
       try: # Bitblt may raise error, but we can safely ignore it, otherwise thread will die
-        self.game_state.process(action)
+        self.game_state.process(action)  #这里就是take action
       except Exception as e:
         print e.message
 
@@ -142,7 +148,7 @@ class A3CTrainingThread(object):
 
       self.local_t += 1
 
-      # s_t1 -> s_t
+      # s_t1 -> s_t   这里相当于 s = s_
       self.game_state.update()
       
       self.total_q_max += np.max(pi_)
@@ -168,6 +174,7 @@ class A3CTrainingThread(object):
 
     R = 0.0
     if not terminal_end:
+      #返回V(s)
       R = self.local_network.run_value(sess, self.game_state.s_t)
 
     actions.reverse()

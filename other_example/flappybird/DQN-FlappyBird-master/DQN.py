@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+#coding:utf8
 #介绍:https://zhuanlan.zhihu.com/p/25719115
 #git:https://github.com/yenchenlin/DeepLearningFlappyBird
 from __future__ import print_function
@@ -76,7 +77,7 @@ def createNetwork():
 
     h_fc1 = tf.nn.relu(tf.matmul(h_conv3_flat, W_fc1) + b_fc1)
 
-    #网络的输出,这里输出的是ACTIONS个实数值
+    #网络的输出,这里输出的是ACTIONS个实数值,Q(s,a)值
     readout = tf.matmul(h_fc1, W_fc2) + b_fc2
 
     return s, readout, h_fc1
@@ -98,8 +99,8 @@ def trainNetwork(s, readout, h_fc1, sess):
     D = deque()
 
     # printing
-    a_file = open("logs_" + GAME + "/readout.txt", 'w')
-    h_file = open("logs_" + GAME + "/hidden.txt", 'w')
+    #a_file = open("logs_" + GAME + "/readout.txt", 'w')
+    #h_file = open("logs_" + GAME + "/hidden.txt", 'w')
 
     # get the first state by doing nothing and preprocess the image to 80x80x4
     do_nothing = np.zeros(ACTIONS)

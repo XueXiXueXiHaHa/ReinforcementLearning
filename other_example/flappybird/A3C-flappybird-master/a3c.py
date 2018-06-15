@@ -65,24 +65,25 @@ LOG_FILE = 'summaries/{}-{}'.format(settings.experiment_name, settings.agent_typ
 random.seed(settings.random_seed)
 
 def log_uniform(lo, hi, size):
-  # returns LogUniform(lo,hi) for the number of specified agents.
+  #logspace中，开始点和结束点是10的幂，生成等比数列,比如(-5,-3,3) 产生10^-5,10^-4,10^-3
   return np.logspace(lo, hi, size)
 
 def train_function(parallel_index):
-  global global_t
+  global global_t #全局step数
   
-  training_thread = training_threads[parallel_index]
+  worker = training_threads[parallel_index]
   # set start_time
   start_time = time.time() - wall_t
-  training_thread.set_start_time(start_time)
+  worker.set_start_time(start_time)
 
+  #无限训练:直到有停止请求,或者work总step数大于  max_time_step =4000W
   while True:
     if stop_requested:
       break
     if global_t > settings.max_time_step:
       break
 
-    diff_global_t = training_thread.process(sess, global_t, statistics)
+    diff_global_t = worker.process(sess, global_t, statistics)
     global_t += diff_global_t
     
     
@@ -118,44 +119,48 @@ if not settings.mode == 'display' and not settings.mode == 'visualize':
   if settings.use_gpu:
     device = "/gpu:0"
 
+  #初始化N_worker个学习率              # low = -5  high = -3  parallel_agent_size =16
   initial_learning_rates = log_uniform(settings.initial_alpha_low,
                                         settings.initial_alpha_high,
                                         settings.parallel_agent_size)
   global_t = 0
 
   stop_requested = False
-
+  #===================================
+  #实例化global网络,定义ac网络结构
   if settings.agent_type == 'LSTM':
     global_network = GameACLSTMNetwork(settings.action_size, -1, device)
   else:
     global_network = GameACFFNetwork(settings.action_size, -1, device)
 
 
-  training_threads = []
+
 
   learning_rate_input = tf.placeholder("float")
 
+  #初始化优化器,这里自己定义了一个优化器
   grad_applier = RMSPropApplier(learning_rate = learning_rate_input,
-                                decay = settings.rmsp_alpha,
+                                decay = settings.rmsp_alpha, #0.99
                                 momentum = 0.0,
-                                epsilon = settings.rmsp_epsilon,
-                                clip_norm = settings.grad_norm_clip,
+                                epsilon = settings.rmsp_epsilon, #0.1
+                                clip_norm = settings.grad_norm_clip, #40
                                 device = device)
 
-
+  #初始化worker网络,每个worker的学习率不同
+  training_threads = []
   for i in range(settings.parallel_agent_size):
     training_thread = A3CTrainingThread(i, 
                                         global_network, 
                                         initial_learning_rates[i],
                                         learning_rate_input, 
                                         grad_applier, 
-                                        settings.max_time_step, 
+                                        settings.max_time_step, #40000000, 'Maximum training steps'
                                         device,
                                         settings.action_size,
                                         settings.gamma,
-                                        settings.local_t_max,
+                                        settings.local_t_max,  #256, 'Repeat step size'
                                         settings.entropy_beta,
-                                        settings.agent_type,
+                                        settings.agent_type, #FF
                                         settings.performance_log_interval,
                                         settings.log_level,
                                         settings.random_seed)
@@ -200,8 +205,9 @@ if not settings.mode == 'display' and not settings.mode == 'visualize':
     wall_t = 0.0
 
     print "Starting experiment {} with agent type {}".format(settings.experiment_name, agent)
-    
+
   train_threads = []
+  #启动工作线程,函数train_function,传入线程索引i.
   for i in range(settings.parallel_agent_size):
     train_threads.append(threading.Thread(target=train_function, args=(i,)))
     
